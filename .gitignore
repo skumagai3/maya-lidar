@@ -1,0 +1,8 @@
+data/
+runs/
+.ipynb_checkpoints/
+__pycache__/
+*.egg-info/
+*.part
+._*
+.DS_Store

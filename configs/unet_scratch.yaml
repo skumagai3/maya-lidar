@@ -1,0 +1,37 @@
+# Plain U-Net trained from scratch on the Chactun lidar tiles.
+experiment: unet_scratch
+
+data:
+  split: official        # test = tiles 1765-2093; train/val drawn at random from 0-1764
+  val_frac: 0.15
+  split_seed: 42
+
+model:
+  name: unet
+  base_filters: 32
+  depth: 4
+  dropout: 0.0           # > 0 adds SpatialDropout2D after the bottleneck block
+
+loss:
+  bce_weight: 1.0        # loss = bce_weight * BCE + weighted mean (1 - soft Dice)
+  dice_class_weights: uniform   # or inv_sqrt_frequency
+
+train:
+  batch_size: 4
+  epochs: 60
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  lr_patience: 5         # halve the learning rate after this many epochs without val_loss improvement
+  early_stop_patience: 12
+  seed: 0
+  cache_train: true     # hold training tiles in RAM as uint8 (about 2 GB)
+  cache_val: true
+  mixed_precision: false # float16 compute with float32 weights; faster on recent GPUs
+
+smoke:                   # quick pipeline check before the full run
+  n_train: 64
+  n_val: 16
+  epochs: 2
+
+eval:
+  thresholds: [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8]

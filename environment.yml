@@ -1,0 +1,32 @@
+# Local environment. Colab needs none of this; the notebooks install the package there.
+#
+#   conda env create -f environment.yml
+#   conda activate maya-lidar
+#   pip install -e .
+#
+# TensorFlow: Apple Silicon, also uncomment tensorflow-metal; NVIDIA on Linux, use
+# tensorflow[and-cuda] instead of tensorflow.
+name: maya-lidar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - pyyaml
+  - scipy
+  - requests
+  - tqdm
+  - jupyterlab
+  - ipywidgets
+  - rasterio        # needed later for G-LiHT DEMs
+  - pdal            # needed later for G-LiHT point clouds
+  - python-pdal
+  - pip
+  - pip:
+      - tensorflow>=2.16,<2.21
+      # - tensorflow-metal
+      - tifffile
+      - laspy[lazrs]
+      - rvt-py
