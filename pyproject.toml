@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Semantic segmentation of Maya archaeological features in airborne lidar"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 authors = [{name = "Sam Kumagai"}]
 # TensorFlow is left out on purpose: Colab ships its own build, and locally the
 # right package depends on the hardware (see environment.yml).

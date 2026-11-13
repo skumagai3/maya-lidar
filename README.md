@@ -130,3 +130,8 @@ Kocev, D., Simidjievski, N., Kostovska, A., Dimitrovski, I. and Kokalj, Ž., eds
 Discover the Mysteries of the Maya: Selected Contributions from the Machine Learning
 Challenge and the Discovery Challenge Workshop at ECML PKDD 2021.
 https://arxiv.org/abs/2208.03163
+
+## License
+
+The code is released under the MIT License (see `LICENSE`). The Chactún data are not
+part of this repository and are covered by the terms on their Figshare record.
