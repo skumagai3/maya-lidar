@@ -76,11 +76,17 @@ def unfreeze(model, from_layer="conv4_block1_1_conv"):
             layer.trainable = True
 
 
-def dice_bce_loss(class_weights=(1.0, 1.0, 1.0), bce_weight=1.0, smooth=1.0):
+def dice_bce_loss(class_weights=(1.0, 1.0, 1.0), bce_weight=1.0, smooth=1.0, skip_absent_classes=False):
     """bce_weight * BCE + weighted mean over classes of (1 - soft Dice).
 
     BCE is averaged over pixels and classes. Soft Dice is computed per class over
-    the whole batch. With the defaults this is the common unweighted BCE + Dice."""
+    the whole batch. With the defaults this is the common unweighted BCE + Dice.
+
+    In a batch with no labeled pixels of class c, its Dice term reduces to
+    1 - smooth / (sum of its sigmoid outputs + smooth), which can only be lowered by
+    pushing every output for c toward zero. With skip_absent_classes=True, such
+    classes are left out of the Dice average for that batch (BCE still covers
+    them). If no class is present, the Dice part is zero."""
     w = ops.convert_to_tensor(class_weights, "float32")
 
     def loss(y_true, y_pred):
@@ -89,7 +95,12 @@ def dice_bce_loss(class_weights=(1.0, 1.0, 1.0), bce_weight=1.0, smooth=1.0):
         inter = ops.sum(y_true * y_pred, axis=(0, 1, 2))
         denom = ops.sum(y_true + y_pred, axis=(0, 1, 2))
         dice = 1.0 - (2.0 * inter + smooth) / (denom + smooth)
-        return bce_weight * bce + ops.sum(w * dice) / ops.sum(w)
+        wc = w
+        if skip_absent_classes:
+            present = ops.cast(ops.sum(y_true, axis=(0, 1, 2)) > 0, "float32")
+            wc = w * present
+        dice_mean = ops.sum(wc * dice) / ops.maximum(ops.sum(wc), 1e-7)
+        return bce_weight * bce + dice_mean
 
     loss.__name__ = "dice_bce"
     return loss

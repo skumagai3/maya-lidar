@@ -15,6 +15,7 @@ model:
 loss:
   bce_weight: 1.0        # loss = bce_weight * BCE + weighted mean (1 - soft Dice)
   dice_class_weights: uniform   # or inv_sqrt_frequency
+  dice_skip_absent_classes: false  # true: no Dice term for a class absent from the batch
 
 train:
   batch_size: 4

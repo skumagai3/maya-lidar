@@ -14,6 +14,7 @@ model:
 loss:
   bce_weight: 1.0
   dice_class_weights: uniform
+  dice_skip_absent_classes: false  # true: no Dice term for a class absent from the batch
 
 train:
   batch_size: 4

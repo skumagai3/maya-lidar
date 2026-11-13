@@ -88,8 +88,10 @@ before dividing, as in the challenge. A pixel counts as a class when its sigmoid
 exceeds a per-class threshold chosen on validation; scores at a fixed 0.5 are saved too.
 
 Settings live in `configs/`. Options that are off by default: bottleneck dropout
-(`model.dropout`) and frequency-based class weights in the Dice term
-(`loss.dice_class_weights: inv_sqrt_frequency`).
+(`model.dropout`), frequency-based class weights in the Dice term
+(`loss.dice_class_weights: inv_sqrt_frequency`), and leaving a class out of the Dice
+term in batches where it has no labeled pixels (`loss.dice_skip_absent_classes`). The
+last one has its own config, `unet_scratch_dice_skip_absent`, selectable in notebook 02.
 
 For reference, the best challenge entries reached a mean IoU of about 0.83 using lidar
 alone.

@@ -63,7 +63,8 @@ def compile_model(net, cfg: dict, learning_rate: float, class_weights: list[floa
 
     net.compile(
         optimizer=keras.optimizers.AdamW(learning_rate, weight_decay=cfg["train"]["weight_decay"]),
-        loss=M.dice_bce_loss(class_weights, bce_weight=cfg["loss"]["bce_weight"]),
+        loss=M.dice_bce_loss(class_weights, bce_weight=cfg["loss"]["bce_weight"],
+                             skip_absent_classes=cfg["loss"].get("dice_skip_absent_classes", False)),
         metrics=M.iou_metrics(),
     )
 
