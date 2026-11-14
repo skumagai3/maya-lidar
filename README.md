@@ -54,14 +54,16 @@ mounts Google Drive and saves its outputs to `MyDrive/maya-lidar/runs/`. Set
 | `04_viewer` | Interactive look at a finished run: sort tiles by error type, toggle layers, move thresholds. No GPU needed. |
 
 Each experiment notebook runs a short smoke test (64 tiles, 2 epochs) before the full
-run. Every run writes to `runs/<experiment>/<timestamp>/`:
+run, then starts TensorBoard (`%tensorboard --logdir /tmp/mayalidar_tensorboard`) so
+the run can be watched live. Every run writes to `runs/<experiment>/<timestamp>/`:
 
 ```
 config.yaml          the exact config used
 split.json           tile ids in train and validation
 normalization.json   per-band mean and std of the training tiles, class counts
-log.csv              loss and validation IoU per epoch
-best.keras           checkpoint with the lowest validation loss
+log.csv              loss, IoU and learning rate per epoch (rewritten every epoch)
+tensorboard/         TensorBoard logs, including three validation tiles per epoch
+best.keras           checkpoint with the highest validation mean IoU
 scores.json          per-class IoU on validation and test, threshold sweep
 diagnostics.json     precision-recall curves, object detection by size
 val_outputs.npz      validation sigmoid outputs (float16, about 120 MB), read by 04_viewer
@@ -86,6 +88,9 @@ Dice, weighted equally. The reported metric is IoU per class, with true positive
 false positives and false negatives summed over every pixel of the evaluated split
 before dividing, as in the challenge. A pixel counts as a class when its sigmoid output
 exceeds a per-class threshold chosen on validation; scores at a fixed 0.5 are saved too.
+The saved checkpoint is the epoch with the highest validation mean IoU (at 0.5), not the
+lowest validation loss: with a rare class, the loss can drop by suppressing that class
+entirely, which happened in the first baseline run.
 
 Settings live in `configs/`. Options that are off by default: bottleneck dropout
 (`model.dropout`), frequency-based class weights in the Dice term
@@ -107,6 +112,7 @@ src/mayalidar/
   data.py             tile indexing, extraction, official split, tf.data pipeline
   model.py            U-Net, ResNet50 U-Net, loss, IoU metric
   train.py            training from a config
+  callbacks.py        per-epoch log and TensorBoard tile images
   evaluate.py         IoU, threshold sweep, per-tile scores
   viz.py              figures
   viewer.py           interactive viewer (ipywidgets)

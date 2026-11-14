@@ -69,36 +69,59 @@ def compile_model(net, cfg: dict, learning_rate: float, class_weights: list[floa
     )
 
 
+CHECKPOINT_MONITOR = "val_mean_iou"  # best.keras = highest validation mean IoU
+
+
 def _best_logged(run_dir: Path, *logs: str) -> float | None:
-    """Lowest val_loss in existing CSV logs, so a resumed run does not overwrite
-    best.keras with a worse model."""
-    import pandas as pd
+    """Highest validation mean IoU in existing logs, so a resumed run does not
+    overwrite best.keras with a worse model."""
+    from .callbacks import read_log
 
-    vals = [pd.read_csv(run_dir / n)["val_loss"].min() for n in logs
-            if (run_dir / n).exists() and (run_dir / n).stat().st_size > 0]
-    return float(min(vals)) if vals else None
+    vals = [r[CHECKPOINT_MONITOR] for n in logs for r in read_log(run_dir / n) if CHECKPOINT_MONITOR in r]
+    return max(vals) if vals else None
 
 
-def _callbacks(run_dir: Path, cfg: dict, phase: str, best_so_far: float | None):
+def _tensorboard_dirs(cfg: dict, run_dir: Path) -> tuple[Path, Path]:
+    """TensorBoard writes to fast local disk; RunLog copies it to the run folder
+    after every epoch. On resume the run folder's copy is restored first."""
+    import shutil
+    import tempfile
+
+    local = Path(tempfile.gettempdir()) / "mayalidar_tensorboard" / cfg["experiment"] / run_dir.name
+    saved = run_dir / "tensorboard"
+    if saved.exists() and not local.exists():
+        shutil.copytree(saved, local)
+    return local, saved
+
+
+def _callbacks(run_dir: Path, cfg: dict, phase: str, best_so_far: float | None,
+               tb: tuple[Path, Path], tiles_cb):
     import keras
+
+    from .callbacks import RunLog
 
     t = cfg["train"]
     log = "log.csv" if phase == "main" else f"log_{phase}.csv"
+    tb_local, tb_saved = tb
+    tb_dir = tb_local if phase == "main" else tb_local / phase
     return [
         # restores model, optimizer and epoch from run_dir/backup_<phase> if the session died mid-phase
         keras.callbacks.BackupAndRestore(str(run_dir / f"backup_{phase}")),
-        keras.callbacks.ModelCheckpoint(run_dir / "best.keras", monitor="val_loss", save_best_only=True,
-                                        initial_value_threshold=best_so_far),
+        keras.callbacks.ModelCheckpoint(run_dir / "best.keras", monitor=CHECKPOINT_MONITOR, mode="max",
+                                        save_best_only=True, initial_value_threshold=best_so_far),
         keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=t["lr_patience"], min_lr=1e-6),
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=t["early_stop_patience"], restore_best_weights=True),
-        keras.callbacks.CSVLogger(run_dir / log, append=True),
+        keras.callbacks.TensorBoard(str(tb_dir), write_graph=False),
+        tiles_cb(tb_dir),
+        RunLog(run_dir / log, tb_local, tb_saved),
     ]
 
 
 def run(cfg: dict, train_tiles, val_tiles, run_dir: Path, smoke: bool = False):
     """Train one experiment and save everything needed to read it back into run_dir:
     config.yaml, split.json, normalization.json, log.csv (and log_finetune.csv),
-    best.keras. With smoke=True, uses a few tiles and epochs to check the pipeline.
+    best.keras (highest validation mean IoU) and tensorboard/. With smoke=True,
+    uses a few tiles and epochs to check the pipeline.
 
     Calling run again with the same run_dir resumes: a phase that finished is
     skipped (marker file phase_<name>.done), and a phase that was interrupted
@@ -127,6 +150,14 @@ def run(cfg: dict, train_tiles, val_tiles, run_dir: Path, smoke: bool = False):
                               cache=t.get("cache_train", True), seed=t["seed"])
     ds_val = D.make_dataset(val_tiles, stats, MASK_PRESENT_VALUE, t["batch_size"], cache=t.get("cache_val", True))
 
+    from .callbacks import TileImages, pick_image_tiles
+
+    tb = _tensorboard_dirs(cfg, run_dir)
+    picks = pick_image_tiles(val_tiles, MASK_PRESENT_VALUE)
+
+    def tiles_cb(log_dir):
+        return TileImages(picks, stats, MASK_PRESENT_VALUE, log_dir)
+
     main_done = run_dir / "phase_main.done"
     if main_done.exists():
         net = keras.models.load_model(run_dir / "best.keras", compile=False)
@@ -135,7 +166,7 @@ def run(cfg: dict, train_tiles, val_tiles, run_dir: Path, smoke: bool = False):
         net = build_model(cfg)
         compile_model(net, cfg, t["learning_rate"], cw)
         net.fit(ds_train, validation_data=ds_val, epochs=epochs,
-                callbacks=_callbacks(run_dir, cfg, "main", _best_logged(run_dir, "log.csv")))
+                callbacks=_callbacks(run_dir, cfg, "main", _best_logged(run_dir, "log.csv"), tb, tiles_cb))
         main_done.touch()
 
     ft = cfg.get("finetune")
@@ -143,8 +174,9 @@ def run(cfg: dict, train_tiles, val_tiles, run_dir: Path, smoke: bool = False):
         M.unfreeze(net, ft["unfreeze_from"])
         compile_model(net, cfg, t["learning_rate"] * ft["lr_factor"], cw)
         ft_epochs = cfg["smoke"]["epochs"] if smoke else ft["epochs"]
-        # best.keras is only overwritten if fine-tuning beats every earlier epoch
+        # best.keras is only overwritten if fine-tuning beats the best mean IoU so far
         net.fit(ds_train, validation_data=ds_val, epochs=ft_epochs,
-                callbacks=_callbacks(run_dir, cfg, "finetune", _best_logged(run_dir, "log.csv", "log_finetune.csv")))
+                callbacks=_callbacks(run_dir, cfg, "finetune", _best_logged(run_dir, "log.csv", "log_finetune.csv"),
+                                     tb, tiles_cb))
         (run_dir / "phase_finetune.done").touch()
     return net, stats

@@ -246,26 +246,43 @@ def plot_class_counts(counts: dict, title: str):
 
 
 def plot_history(log_csvs: list[Path], title: str):
-    """Loss and per-class validation IoU per epoch. Several logs (e.g. frozen then
-    fine-tuned encoder) are concatenated, with a dashed line at the switch."""
+    """Loss (log scale) and validation IoU per epoch. Several logs (e.g. frozen then
+    fine-tuned encoder) are concatenated, with a dashed line at the switch. A dotted
+    line marks the epoch saved as best.keras: highest validation mean IoU, or lowest
+    validation loss for older runs that did not log mean IoU."""
     import pandas as pd
 
-    logs = [pd.read_csv(p) for p in log_csvs if Path(p).exists()]
+    logs = [pd.read_csv(p) for p in log_csvs if Path(p).exists() and Path(p).stat().st_size > 0]
     log = pd.concat(logs, ignore_index=True)
     epoch = np.arange(1, len(log) + 1)
-    fig, ax = plt.subplots(1, 2, figsize=(12, 3.6))
+    fig, ax = plt.subplots(1, 2, figsize=(12, 3.8))
     ax[0].plot(epoch, log["loss"], label="train")
     ax[0].plot(epoch, log["val_loss"], label="validation")
-    ax[0].set_ylabel("BCE + Dice loss")
+    ax[0].set_yscale("log")
+    from matplotlib.ticker import FixedLocator, NullFormatter, ScalarFormatter
+
+    lo, hi = np.nanmin(log[["loss", "val_loss"]].values), np.nanmax(log[["loss", "val_loss"]].values)
+    ticks = [v for v in (0.1, 0.2, 0.3, 0.5, 1, 2, 5, 10, 20) if lo / 1.5 <= v <= hi * 1.5]
+    ax[0].yaxis.set_major_locator(FixedLocator(ticks))
+    ax[0].yaxis.set_major_formatter(ScalarFormatter())
+    ax[0].yaxis.set_minor_formatter(NullFormatter())
+    ax[0].set_ylabel("BCE + Dice loss (log scale)")
     for c in CLASSES:
         ax[1].plot(epoch, log[f"val_iou_{c}"], label=c, color=CLASS_COLORS[c])
+    if "val_mean_iou" in log:
+        ax[1].plot(epoch, log["val_mean_iou"], label="mean", color="black", lw=1.6)
+        best, rule = int(log["val_mean_iou"].idxmax()) + 1, "highest validation mean IoU"
+    else:
+        best, rule = int(log["val_loss"].idxmin()) + 1, "lowest validation loss"
     ax[1].set_ylabel("validation IoU (sigmoid > 0.5)")
+    ax[1].set_ylim(0, 1)
     for a in ax:
+        a.axvline(best, color="0.3", ls=":", lw=1.2, label=f"best.keras: epoch {best}")
         a.set_xlabel("epoch")
         a.legend(fontsize=8)
         if len(logs) > 1:
             a.axvline(len(logs[0]) + 0.5, color="0.5", ls="--", lw=1)
-    fig.suptitle(title)
+    fig.suptitle(f"{title}\nbest checkpoint by {rule}")
     fig.tight_layout()
     return fig
 

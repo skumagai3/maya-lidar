@@ -134,5 +134,33 @@ class ClassIoU(keras.metrics.Metric):
         return {**super().get_config(), "class_idx": self.class_idx, "threshold": self.threshold}
 
 
+class MeanIoU(keras.metrics.Metric):
+    """Unweighted mean over classes of the per-class IoU, each accumulated over
+    the epoch as in ClassIoU. This is the challenge's mean IoU, and the score
+    used to select the best checkpoint."""
+
+    def __init__(self, threshold=0.5, name="mean_iou", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.threshold = threshold
+        self.inter = self.add_weight(name="inter", shape=(len(CLASSES),), initializer="zeros")
+        self.union = self.add_weight(name="union", shape=(len(CLASSES),), initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        t = ops.cast(y_true > 0.5, "float32")
+        p = ops.cast(y_pred > self.threshold, "float32")
+        self.inter.assign_add(ops.sum(t * p, axis=(0, 1, 2)))
+        self.union.assign_add(ops.sum(ops.maximum(t, p), axis=(0, 1, 2)))
+
+    def result(self):
+        return ops.mean(self.inter / (self.union + 1e-7))
+
+    def reset_state(self):
+        self.inter.assign(ops.zeros_like(self.inter))
+        self.union.assign(ops.zeros_like(self.union))
+
+    def get_config(self):
+        return {**super().get_config(), "threshold": self.threshold}
+
+
 def iou_metrics(threshold=0.5):
-    return [ClassIoU(i, threshold) for i in range(len(CLASSES))]
+    return [ClassIoU(i, threshold) for i in range(len(CLASSES))] + [MeanIoU(threshold)]
